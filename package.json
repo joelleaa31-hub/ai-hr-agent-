@@ -1,0 +1,13 @@
+{
+  "name": "ai-hr-agent",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
+  "dependencies": {
+    "next": "14",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "openai": "4.57.0"
+  },
+  "engines": { "node": ">=18" }
+}
