@@ -2,12 +2,6 @@ import ChatWidget from "../components/ChatWidget.jsx";
 import JobSearch from "../components/JobSearch.jsx";
 
 export default function Page() {
-  const onChatClick = (e) => {
-    e.preventDefault();
-    if (typeof window !== "undefined" && window.openHRChat) window.openHRChat();
-    location.hash = "chat";
-  };
-
   return (
     <main className="container">
       {/* Top Navigation */}
@@ -22,8 +16,10 @@ export default function Page() {
           <a className="btn" href="#about">About</a>
           <a className="btn" href="#process">Process</a>
           <a className="btn" href="#contact">Contact</a>
-          <a className="btn" href="#chat" onClick={onChatClick}
-             style={{background:"linear-gradient(90deg,var(--brand-3),var(--brand-2))"}}>Chat with us</a>
+          {/* IMPORTANT: no onClick here */}
+          <a className="btn" href="#chat" style={{background:"linear-gradient(90deg,var(--brand-3),var(--brand-2))"}}>
+            Chat with us
+          </a>
         </div>
       </nav>
 
@@ -51,9 +47,13 @@ export default function Page() {
 
       <section id="contact" className="card" style={{marginTop:16}}>
         <h2 style={{marginTop:0}}>Contact</h2>
-        <p style={{color:"var(--muted)"}}>Questions? Click <a href="#chat" onClick={onChatClick}>Chat with us</a> or email careers@example.com.</p>
+        {/* IMPORTANT: link only, no onClick */}
+        <p style={{color:"var(--muted)"}}>
+          Questions? Click <a href="#chat">Chat with us</a> or email careers@example.com.
+        </p>
       </section>
 
+      {/* Anchor for the widget */}
       <div id="chat" />
       <ChatWidget />
     </main>
