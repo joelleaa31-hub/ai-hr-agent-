@@ -17,74 +17,153 @@ export default function ChatWidget() {
   const inputRef = useRef(null);
   const scrollRef = useRef(null);
 
-  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [messages, open]);
-  const placeholder = useMemo(() => ({ en:"Type a message…", fr:"Écrivez un message…", ar:"اكتب رسالة…" }[locale.code]), [locale.code]);
+  // keep scrolled to last message
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, open]);
+
+  // open the widget when the URL hash is #chat, and expose window.openHRChat()
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // allow programmatic open (used by links/buttons)
+    window.openHRChat = () => setOpen(true);
+
+    const onHash = () => {
+      if (window.location.hash === "#chat") setOpen(true);
+    };
+    window.addEventListener("hashchange", onHash);
+
+    // open immediately if user already has #chat in URL
+    onHash();
+
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const placeholder = useMemo(
+    () => ({ en: "Type a message…", fr: "Écrivez un message…", ar: "اكتب رسالة…" }[locale.code]),
+    [locale.code]
+  );
 
   async function send() {
     const text = (inputRef.current?.value ?? "").trim();
     if (!text) return;
     setMessages((m) => [...m, { role: "user", content: text }]);
-    inputRef.current.value = "";
+    if (inputRef.current) inputRef.current.value = "";
     setLoading(true);
 
     try {
-      // If user asks about jobs/openings, query our Jobs API first
+      // Job search shortcut: try our Jobs API first for job-like queries
       const looksLikeJobs = /job|role|opening|position|apply|hiring|vacancy|وظيفة|فرصة|توظيف|offre|poste/i.test(text);
       if (looksLikeJobs) {
-        const res = await fetch("/api/jobs/search", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ q: text, location: "" }) });
+        const res = await fetch("/api/jobs/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ q: text, location: "" })
+        });
         const data = await res.json();
         const jobs = data.jobs || [];
         if (jobs.length) {
-          const list = jobs.slice(0,3).map(j => `• ${j.title} — ${j.location}`).join("\n");
-          const note = locale.code==="fr"
-            ? `Voici les meilleurs postes correspondant à votre recherche:\n${list}\n\nAllez à la section *Open Positions* pour postuler.`
-            : locale.code==="ar"
-            ? `هذه أفضل الوظائف المطابقة لبحثك:\n${list}\n\nاذهب إلى قسم *الوظائف المتاحة* للتقديم.`
-            : `Here are the top matches:\n${list}\n\nScroll to *Open Positions* below to apply.`;
-          setMessages((m) => [...m, { role:"assistant", content: note }]);
+          const list = jobs.slice(0, 3).map(j => `• ${j.title} — ${j.location}`).join("\n");
+          const note =
+            locale.code === "fr"
+              ? `Voici les meilleurs postes correspondant à votre recherche:\n${list}\n\nAllez à la section *Open Positions* pour postuler.`
+              : locale.code === "ar"
+              ? `هذه أفضل الوظائف المطابقة لبحثك:\n${list}\n\nاذهب إلى قسم *الوظائف المتاحة* للتقديم.`
+              : `Here are the top matches:\n${list}\n\nScroll to *Open Positions* below to apply.`;
+          setMessages((m) => [...m, { role: "assistant", content: note }]);
           setLoading(false);
           return;
         }
       }
 
-      // Otherwise call AI
+      // Otherwise call the AI chat API
       const r = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, locale: locale.code })
       });
       const data = await r.json();
-      setMessages((m) => [...m, { role:"assistant", content: data.reply ?? "(no reply)" }]);
+      setMessages((m) => [...m, { role: "assistant", content: data.reply ?? "(no reply)" }]);
     } catch {
-      setMessages((m) => [...m, { role:"assistant", content: "Sorry, something went wrong." }]);
-    } finally { setLoading(false); }
+      setMessages((m) => [...m, { role: "assistant", content: "Sorry, something went wrong." }]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 50 }} dir={locale.dir}>
       {open && (
-        <div style={{ marginBottom: 12, width: 380, border: "1px solid var(--line)", borderRadius: 18, boxShadow: "var(--shadow)", background: "#fff", overflow: "hidden" }}>
+        <div
+          style={{
+            marginBottom: 12,
+            width: 380,
+            border: "1px solid var(--line)",
+            borderRadius: 18,
+            boxShadow: "var(--shadow)",
+            background: "#fff",
+            overflow: "hidden",
+          }}
+        >
           {/* Header */}
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px",
-            background:"linear-gradient(90deg, var(--brand-1), var(--brand-2))", color:"#fff" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              padding: "10px 14px",
+              background: "linear-gradient(90deg, var(--brand-1), var(--brand-2))",
+              color: "#fff",
+            }}
+          >
             <b>HR Assistant</b>
-            <div style={{ display:"flex", gap: 8 }}>
-              <select aria-label="Language" value={locale.code}
-                onChange={(e) => setLocale(LOCALES.find(l => l.code === e.target.value) ?? LOCALES[0])}
-                style={{ borderRadius: 8, padding: "2px 6px", border: "none" }}>
-                {LOCALES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+            <div style={{ display: "flex", gap: 8 }}>
+              <select
+                aria-label="Language"
+                value={locale.code}
+                onChange={(e) => setLocale(LOCALES.find((l) => l.code === e.target.value) ?? LOCALES[0])}
+                style={{ borderRadius: 8, padding: "2px 6px", border: "none" }}
+              >
+                {LOCALES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
               </select>
-              <button onClick={() => setOpen(false)} aria-label="Close" style={{ borderRadius: 8, border: "none", padding: "2px 8px", background:"#ffffff22", color:"#fff" }}>✕</button>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                style={{ borderRadius: 8, border: "none", padding: "2px 8px", background: "#ffffff22", color: "#fff" }}
+              >
+                ✕
+              </button>
             </div>
           </div>
 
           {/* Messages */}
-          <div ref={scrollRef} style={{ height: 320, overflowY: "auto", padding: 12, background: "linear-gradient(180deg, rgba(108,92,231,.05), rgba(0,184,148,.05))" }}>
+          <div
+            ref={scrollRef}
+            style={{
+              height: 320,
+              overflowY: "auto",
+              padding: 12,
+              background: "linear-gradient(180deg, rgba(108,92,231,.05), rgba(0,184,148,.05))",
+            }}
+          >
             {messages.map((m, i) => (
               <div key={i} style={{ textAlign: m.role === "user" ? "right" : "left", margin: "6px 0" }}>
-                <span style={{ display: "inline-block", maxWidth: "85%", padding: "9px 12px", borderRadius: 14,
-                  background: m.role === "user" ? "transparent" : "rgba(15,23,42,.05)",
-                  border: m.role === "user" ? "1px solid var(--line)" : "none", fontSize: 14 }}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    maxWidth: "85%",
+                    padding: "9px 12px",
+                    borderRadius: 14,
+                    background: m.role === "user" ? "transparent" : "rgba(15,23,42,.05)",
+                    border: m.role === "user" ? "1px solid var(--line)" : "none",
+                    fontSize: 14,
+                  }}
+                >
                   {m.content}
                 </span>
               </div>
@@ -94,30 +173,35 @@ export default function ChatWidget() {
 
           {/* Input */}
           <div style={{ display: "flex", gap: 8, padding: 10, borderTop: "1px solid var(--line)", background: "#fff" }}>
-            <input ref={inputRef} placeholder={placeholder} onKeyDown={(e) => e.key === "Enter" && send()}
-              style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", fontSize: 14 }} />
-            <button onClick={send} style={{ borderRadius: 12, padding: "10px 14px", border: "none",
-              background:"linear-gradient(90deg, var(--brand-1), var(--brand-2))", color:"#fff" }}>
+            <input
+              ref={inputRef}
+              placeholder={placeholder}
+              onKeyDown={(e) => e.key === "Enter" && send()}
+              style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", fontSize: 14 }}
+            />
+            <button
+              onClick={send}
+              style={{
+                borderRadius: 12,
+                padding: "10px 14px",
+                border: "none",
+                background: "linear-gradient(90deg, var(--brand-1), var(--brand-2))",
+                color: "#fff",
+              }}
+            >
               Send
             </button>
           </div>
         </div>
       )}
       {!open && (
-        <button onClick={() => setOpen(true)} style={{ border: "1px solid var(--line)", borderRadius: 999, padding: "12px 18px", background: "#fff", boxShadow: "var(--shadow)" }}>
+        <button
+          onClick={() => setOpen(true)}
+          style={{ border: "1px solid var(--line)", borderRadius: 999, padding: "12px 18px", background: "#fff", boxShadow: "var(--shadow)" }}
+        >
           Chat
         </button>
       )}
     </div>
   );
 }
-// … keep your current ChatWidget code …
-useEffect(() => {
-  // Allow clicking "Chat with us" to open the widget
-  window.openHRChat = () => setOpen(true);
-  const onHash = () => { if (location.hash === "#chat") setOpen(true); };
-  window.addEventListener("hashchange", onHash);
-  if (location.hash === "#chat") setOpen(true);
-  return () => window.removeEventListener("hashchange", onHash);
-}, []);
-// … rest of your component …
