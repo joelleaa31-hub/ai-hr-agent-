@@ -111,3 +111,13 @@ export default function ChatWidget() {
     </div>
   );
 }
+// … keep your current ChatWidget code …
+useEffect(() => {
+  // Allow clicking "Chat with us" to open the widget
+  window.openHRChat = () => setOpen(true);
+  const onHash = () => { if (location.hash === "#chat") setOpen(true); };
+  window.addEventListener("hashchange", onHash);
+  if (location.hash === "#chat") setOpen(true);
+  return () => window.removeEventListener("hashchange", onHash);
+}, []);
+// … rest of your component …
