@@ -1,80 +1,96 @@
 "use client";
-import { useEffect, useState } from "react";
-import ApplyModal from "./ApplyModal";
+import { useEffect, useMemo, useState } from "react";
 
-const LOCATIONS = ["Paris","London","Dubai","Berlin","Lisbon","Remote","EMEA","MENA"];
+const LOCATIONS = ["Paris","London","Dubai","Remote","Berlin","Lisbon","EMEA","MENA","All"];
 
 export default function JobSearch(){
-  const [q,setQ]=useState(""),[location,setLocation]=useState(""),
-        [jobs,setJobs]=useState([]),[loading,setLoading]=useState(false),
-        [selectedJob,setSelectedJob]=useState(null);
+  const [q, setQ] = useState("");
+  const [location, setLocation] = useState("All");
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(()=>{ // read ?q=&location= from URL
-    const sp = new URLSearchParams(window.location.search);
-    const q0 = sp.get("q") || "", loc0 = sp.get("location") || "";
-    setQ(q0); setLocation(loc0);
-  },[]);
+  // initialize from URL ?location=
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const loc = url.searchParams.get("location");
+    if (loc && LOCATIONS.includes(loc)) setLocation(loc);
+  }, []);
 
-  useEffect(()=>{ // auto search if params present
-    if (q || location) search();
-    else loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, location]);
+  const placeholder = "Keyword e.g. frontend, data…";
+  const locationPlaceholder = "Location e.g. Paris, Remote…";
 
-  async function loadAll(){
+  async function search(){
     setLoading(true);
-    try{ const r=await fetch("/api/jobs"); const d=await r.json(); setJobs(d.jobs||[]); }
-    finally{ setLoading(false); }
+    try{
+      const res = await fetch("/api/jobs/search", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ q, location: location==="All" ? "" : location })
+      });
+      const data = await res.json();
+      setJobs(data.jobs ?? []);
+    }catch{
+      setJobs([]);
+    }finally{
+      setLoading(false);
+    }
   }
 
-  async function search(e){
-    e?.preventDefault(); setLoading(true);
-    try{
-      const r=await fetch("/api/jobs/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q,location})});
-      const d=await r.json(); setJobs(d.jobs||[]);
-    } finally { setLoading(false); }
-  }
+  useEffect(() => { search(); /* initial & on mount */ }, []);
+  useEffect(() => { const t = setTimeout(search, 250); return () => clearTimeout(t); }, [q, location]);
+
+  const filteredText = useMemo(() => (location==="All" ? "" : ` • ${location}`), [location]);
 
   return (
-    <section className="card" id="jobs">
-      <h2 style={{marginTop:0}}>Open Positions</h2>
-
-      {/* Quick location pills */}
-      <div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"0 0 12px 0"}}>
-        {LOCATIONS.map(loc => (
-          <button key={loc} className="badge" onClick={()=>setLocation(loc)}>{loc}</button>
-        ))}
-        <button className="badge" onClick={()=>{setLocation(""); setQ(""); loadAll();}}>All</button>
+    <section id="jobs" className="card">
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:12, flexWrap:"wrap"}}>
+        <h2 style={{margin:"0 0 6px 0"}}>Open Positions<span className="text-muted">{filteredText}</span></h2>
+        <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+          {LOCATIONS.map(loc => (
+            <button
+              key={loc}
+              className={`chip ${loc===location ? "chip-primary" : ""}`}
+              onClick={()=>setLocation(loc)}
+            >
+              {loc}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <form onSubmit={search} style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:12, marginBottom:16}}>
-        <input className="input" placeholder="Keyword e.g. frontend, data…" value={q} onChange={e=>setQ(e.target.value)} />
-        <input className="input" placeholder="Location e.g. Paris, Remote…" value={location} onChange={e=>setLocation(e.target.value)} />
-        <button className="btn" type="submit">{loading ? "Searching…" : "Search"}</button>
-      </form>
+      {/* Search bars */}
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr auto", gap:10, marginTop:12}}>
+        <input className="input" placeholder={placeholder} value={q} onChange={(e)=>setQ(e.target.value)} />
+        <input className="input" placeholder={locationPlaceholder} value={location==="All" ? "" : location}
+               onChange={(e)=>setLocation(e.target.value || "All")} />
+        <button className="btn btn-primary" onClick={search}>Search</button>
+      </div>
 
-      <div className="grid">
-        {jobs.map((job)=>(
-          <article key={job.id} className="card" style={{display:"flex",flexDirection:"column",gap:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-              <h3 style={{margin:"0 0 4px 0"}}>{job.title}</h3>
-              <span className="badge">{job.type}</span>
+      {/* Results */}
+      <div className="jobs-grid" style={{marginTop:14}}>
+        {loading && <div className="text-muted">Loading jobs…</div>}
+        {!loading && jobs.length===0 && <div className="text-muted">No jobs found.</div>}
+
+        {!loading && jobs.map(job => (
+          <article key={job.id || job.slug || job.title} className="job-card" style={{display:"grid", gap:8}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", gap:8}}>
+              <h3 style={{margin:0}}>{job.title}</h3>
+              {job.type ? <span className="chip">{job.type}</span> : null}
             </div>
-            <div style={{color:"var(--muted)"}}>{job.department} • {job.location}</div>
-            <p style={{margin:"6px 0 0 0"}}>{job.description}</p>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-              {job.skills.slice(0,6).map(s => <span key={s} className="badge">#{s}</span>)}
-            </div>
-            <div style={{display:"flex",gap:8,marginTop:"auto"}}>
-              <a href={job.applyUrl || "#"} className="btn">Details</a>
-              <button className="btn" type="button" onClick={()=>setSelectedJob(job)}
-                style={{background:"linear-gradient(90deg,var(--brand-3),var(--brand-2))"}}>Apply</button>
+            <p className="text-muted" style={{margin:0}}>
+              {job.team || job.department || "—"} • {job.location}
+            </p>
+            {job.summary && <p className="text-muted" style={{margin:"4px 0 0"}}>{job.summary}</p>}
+
+            <div style={{display:"flex", gap:8, marginTop:8, flexWrap:"wrap"}}>
+              {job.url ? <a className="btn" href={job.url}>Details</a> : null}
+              {/* Quick apply route (optional backend) */}
+              <a className="btn btn-primary" href={`#chat`}>Apply in chat</a>
             </div>
           </article>
         ))}
       </div>
-
-      <ApplyModal open={!!selectedJob} job={selectedJob} onClose={()=>setSelectedJob(null)} />
     </section>
   );
 }
