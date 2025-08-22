@@ -1,3 +1,4 @@
+"use client";
 import JobSearch from "../components/JobSearch.jsx";
 import ChatWidget from "../components/ChatWidget.jsx";
 
@@ -17,6 +18,7 @@ export default function Page() {
           <a className="btn" href="#about">About</a>
           <a className="btn" href="#process">Process</a>
           <a className="btn" href="#contact">Contact</a>
+          {/* link only */}
           <a className="btn btn-primary" href="#chat">Chat with us</a>
         </div>
       </nav>
