@@ -16,7 +16,7 @@ export default function Page() {
           <a className="btn" href="#about">About</a>
           <a className="btn" href="#process">Process</a>
           <a className="btn" href="#contact">Contact</a>
-          {/* IMPORTANT: no onClick here */}
+          {/* IMPORTANT: link only. No onClick in Server Components */}
           <a className="btn" href="#chat" style={{background:"linear-gradient(90deg,var(--brand-3),var(--brand-2))"}}>
             Chat with us
           </a>
@@ -47,7 +47,7 @@ export default function Page() {
 
       <section id="contact" className="card" style={{marginTop:16}}>
         <h2 style={{marginTop:0}}>Contact</h2>
-        {/* IMPORTANT: link only, no onClick */}
+        {/* Link only, no onClick */}
         <p style={{color:"var(--muted)"}}>
           Questions? Click <a href="#chat">Chat with us</a> or email careers@example.com.
         </p>
