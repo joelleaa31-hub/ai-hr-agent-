@@ -1,129 +1,127 @@
-/* components/ChatWidget.jsx */
 "use client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
+// Supported languages
 const LOCALES = [
   { code: "en", label: "English", dir: "ltr" },
   { code: "fr", label: "Français", dir: "ltr" },
   { code: "ar", label: "العربية", dir: "rtl" },
 ];
 
-// Simple i18n helpers
-const T = {
-  title: { en: "HR Assistant", fr: "Assistant RH", ar: "مساعد الموارد البشرية" },
-  hello: {
-    en: "Hi! Ask about roles, process, or say 'apply'.",
-    fr: "Bonjour ! Demandez des informations sur les postes, le process, ou dites « postuler ».",
-    ar: "مرحباً! اسأل عن الوظائف أو العملية أو قل « التقديم »."
-  },
-  typeHere: { en: "Type a message…", fr: "Écrivez un message…", ar: "اكتب رسالة…" },
-  apply: { en: "Apply", fr: "Postuler", ar: "التقديم" },
-  details: { en: "Details", fr: "Détails", ar: "التفاصيل" },
-  topMatches: {
-    en: "Here are the top matches:",
-    fr: "Voici les meilleurs postes correspondant à votre recherche :",
-    ar: "أفضل الوظائف المطابقة لبحثك:"
-  },
-  applyBelow: {
-    en: "Pick a role below to apply.",
-    fr: "Choisissez un poste ci-dessous pour postuler.",
-    ar: "اختر وظيفة بالأسفل للتقديم."
-  },
-  applyFormTitle: {
-    en: "Quick Apply",
-    fr: "Candidature rapide",
-    ar: "تقديم سريع"
-  },
-  name: { en: "Full name", fr: "Nom complet", ar: "الاسم الكامل" },
-  email: { en: "Email", fr: "Email", ar: "البريد الإلكتروني" },
-  skills: {
-    en: "Top skills (comma separated)",
-    fr: "Compétences (séparées par des virgules)",
-    ar: "المهارات الرئيسية (مفصولة بفاصلة)"
-  },
-  years: {
-    en: "Years of experience",
-    fr: "Années d’expérience",
-    ar: "سنوات الخبرة"
-  },
-  submit: { en: "Submit", fr: "Envoyer", ar: "إرسال" },
-  scoreTitle: { en: "Fit score", fr: "Score d’adéquation", ar: "نسبة الملاءمة" },
-  getSlots: { en: "Get interview slots", fr: "Voir des créneaux", ar: "عرض مواعيد مقابلة" },
-  slotsIntro: {
-    en: "Earliest available slots:",
-    fr: "Créneaux disponibles au plus tôt :",
-    ar: "أقرب المواعيد المتاحة:"
-  },
-};
+// A tiny helper to spot job-like queries
+const JOB_REGEX =
+  /job|role|opening|position|apply|hiring|vacancy|وظيفة|فرصة|توظيف|offre|poste/i;
 
 export default function ChatWidget() {
-  // Start closed so clicking #chat visibly opens it
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [locale, setLocale] = useState(LOCALES[0]);
   const [loading, setLoading] = useState(false);
 
-  // Messages support text or jobs lists
-  // { role:'assistant'|'user', content?:string, type?:'jobs', jobs?:[{id,title,location}] }
+  // messages can be: { role, type: "text", content } or { role, type:"jobs", items:[...] } or { role, type:"system", content }
   const [messages, setMessages] = useState([
-    { role: "assistant", content: T.hello.en },
+    {
+      role: "assistant",
+      type: "text",
+      content:
+        "Hi! Ask about roles, locations, process, or say 'apply'. I can show openings and let you apply here.",
+    },
   ]);
 
-  // Inline apply state
+  // last jobs shown (used when user types “apply senior engineer” without clicking a card)
+  const [lastJobs, setLastJobs] = useState([]);
+
+  // Quick Apply state
+  const [applyOpen, setApplyOpen] = useState(false);
   const [applyJob, setApplyJob] = useState(null);
-  const [applyForm, setApplyForm] = useState({ name: "", email: "", skills: "", years: "" });
-  const [slots, setSlots] = useState([]);
+  const [applyData, setApplyData] = useState({
+    name: "",
+    email: "",
+    resumeUrl: "",
+    note: "",
+  });
+  const [applySubmitting, setApplySubmitting] = useState(false);
+  const [applyDone, setApplyDone] = useState(null); // { ok, id } or null
 
   const inputRef = useRef(null);
   const scrollRef = useRef(null);
 
-  // localize initial hello when locale changes (only for the first msg if it's still hello)
+  // Auto-scroll to latest message
   useEffect(() => {
-    setMessages((prev) => {
-      if (prev.length === 1 && prev[0].role === "assistant") {
-        return [{ role: "assistant", content: T.hello[locale.code] }];
-      }
-      return prev;
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
     });
-  }, [locale.code]);
+  }, [messages, open, applyOpen]);
 
-  // Keep scrolled to the latest message
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, open, applyJob, slots.length]);
-
-  // Open the widget when URL hash is #chat and expose a helper on window
+  // Open widget when URL has #chat
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.openHRChat = () => setOpen(true);
-    const openIfHashIsChat = () => {
+    const onHash = () => {
       if (window.location.hash === "#chat") setOpen(true);
     };
-    window.addEventListener("hashchange", openIfHashIsChat);
-    openIfHashIsChat();
-    return () => window.removeEventListener("hashchange", openIfHashIsChat);
+    window.addEventListener("hashchange", onHash);
+    onHash();
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
   const placeholder = useMemo(
-    () => ({ en: T.typeHere.en, fr: T.typeHere.fr, ar: T.typeHere.ar }[locale.code]),
+    () =>
+      (
+        { en: "Type a message…", fr: "Écrivez un message…", ar: "اكتب رسالة…" } as const
+      )[locale.code],
     [locale.code]
   );
 
-  // Detect job-like queries
-  function looksLikeJobQuery(text) {
-    return /job|role|opening|position|apply|hiring|vacancy|وظيفة|فرصة|توظيف|offre|poste/i.test(text);
+  // ---------- helpers ----------
+
+  function pushUser(text: string) {
+    setMessages((m) => [...m, { role: "user", type: "text", content: text }]);
   }
+
+  function pushAssistantText(text: string) {
+    setMessages((m) => [...m, { role: "assistant", type: "text", content: text }]);
+  }
+
+  function pushAssistantJobs(items: any[]) {
+    setMessages((m) => [...m, { role: "assistant", type: "jobs", items }]);
+  }
+
+  function openApply(job: any) {
+    setApplyJob(job);
+    setApplyData({ name: "", email: "", resumeUrl: "", note: "" });
+    setApplyDone(null);
+    setApplyOpen(true);
+  }
+
+  // Try fuzzy match on last shown jobs
+  function findJobByText(text: string) {
+    if (!lastJobs?.length) return null;
+    const normalized = text.toLowerCase();
+    return (
+      lastJobs.find(
+        (j) =>
+          normalized.includes(String(j.title).toLowerCase()) ||
+          normalized.includes(String(j.id ?? "").toLowerCase())
+      ) ?? null
+    );
+  }
+
+  // ---------- send ----------
 
   async function send() {
     const text = (inputRef.current?.value ?? "").trim();
     if (!text) return;
 
-    setMessages((m) => [...m, { role: "user", content: text }]);
+    // push user bubble
+    pushUser(text);
     if (inputRef.current) inputRef.current.value = "";
     setLoading(true);
 
     try {
-      // 1) If query looks like jobs, hit search API and show interactive job cards
-      if (looksLikeJobQuery(text)) {
+      // 1) If looks like a jobs query => show jobs with Apply buttons
+      if (JOB_REGEX.test(text)) {
         const res = await fetch("/api/jobs/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -131,253 +129,206 @@ export default function ChatWidget() {
         });
         const data = await res.json();
         const jobs = data.jobs || [];
+
         if (jobs.length) {
-          setMessages((m) => [
-            ...m,
-            { role: "assistant", content: `${T.topMatches[locale.code]}\n${T.applyBelow[locale.code]}` },
-            { role: "assistant", type: "jobs", jobs: jobs.slice(0, 6) },
-          ]);
+          setLastJobs(jobs);
+          pushAssistantJobs(jobs.slice(0, 5)); // show up to 5 in chat
+          setLoading(false);
+          return;
+        } else {
+          pushAssistantText(
+            locale.code === "fr"
+              ? "Je n’ai pas trouvé de postes pour cette recherche. Essayez un autre mot-clé ou une autre ville."
+              : locale.code === "ar"
+              ? "لم أجد وظائف لهذه الكلمات. جرّب كلمة مفتاحية أو مدينة أخرى."
+              : "I didn’t find openings for that. Try a different keyword or city."
+          );
           setLoading(false);
           return;
         }
       }
 
-      // 2) Otherwise, call the AI chat API
-      const r = await fetch("/api/chat", {
+      // 2) If user typed “apply ...” try to auto-match job from last shown list
+      if (/^apply\b/i.test(text)) {
+        const job = findJobByText(text);
+        if (job) {
+          openApply(job);
+          setLoading(false);
+          return;
+        }
+        pushAssistantText(
+          locale.code === "fr"
+            ? "Dites 'apply' suivi du titre du poste (ex: apply senior engineer) ou cliquez sur le bouton 'Apply' d’une offre."
+            : locale.code === "ar"
+            ? "اكتب 'apply' ثم اسم الوظيفة (مثال: apply senior accountant) أو اضغط زر 'Apply' في بطاقة الوظيفة."
+            : "Say 'apply' + the role (e.g., apply senior engineer), or click the 'Apply' button on a job card."
+        );
+        setLoading(false);
+        return;
+      }
+
+      // 3) Otherwise, let the AI answer normally
+      const ai = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, locale: locale.code }),
-      });
-      const data = await r.json();
-      setMessages((m) => [...m, { role: "assistant", content: data.reply ?? "(no reply)" }]);
-    } catch {
-      setMessages((m) => [...m, { role: "assistant", content: "Sorry, something went wrong." }]);
+      }).then((r) => r.json());
+
+      pushAssistantText(ai.reply ?? "(no reply)");
+    } catch (err) {
+      pushAssistantText(
+        locale.code === "fr"
+          ? "Oups, une erreur est survenue."
+          : locale.code === "ar"
+          ? "عذرًا، حدث خطأ ما."
+          : "Sorry, something went wrong."
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  // Start inline apply
-  function startApply(job) {
-    setApplyJob(job);
-    setApplyForm({ name: "", email: "", skills: "", years: "" });
-    setSlots([]);
-  }
+  // ---------- apply submit ----------
 
-  async function submitApply(e) {
-    e?.preventDefault?.();
+  async function submitApplication(e) {
+    e.preventDefault();
     if (!applyJob) return;
 
+    setApplySubmitting(true);
+    setApplyDone(null);
+
     try {
-      setLoading(true);
-      const res = await fetch("/api/apply", {
+      const res = await fetch("/api/jobs/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          jobId: applyJob.id,
-          candidate: {
-            name: applyForm.name,
-            email: applyForm.email,
-            skills: applyForm.skills,
-            years: Number(applyForm.years || 0),
-          },
+          jobId: applyJob.id ?? null,
+          title: applyJob.title,
+          location: applyJob.location,
+          ...applyData,
         }),
       });
-      const json = await res.json();
-      const score = Math.round(json?.score ?? 0);
-      const rationale = json?.rationale ?? "";
-
-      setMessages((m) => [
-        ...m,
-        {
-          role: "assistant",
-          content: `${T.scoreTitle[locale.code]}: ${score}/100\n${rationale}`,
-        },
-      ]);
-      setApplyJob(null);
-    } catch {
-      setMessages((m) => [...m, { role: "assistant", content: "Apply failed. Please try again." }]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function fetchSlots() {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/schedule/slots", { method: "POST" });
       const data = await res.json();
-      const s = (data?.slots ?? []).slice(0, 5);
-      setSlots(s);
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: `${T.slotsIntro[locale.code]}\n${s.map((d) => "• " + new Date(d).toString()).join("\n")}` },
-      ]);
+
+      if (data.ok) {
+        setApplyDone({ ok: true, id: data.id });
+        pushAssistantText(
+          locale.code === "fr"
+            ? `Candidature envoyée pour “${applyJob.title}” à ${applyJob.location}. Nous reviendrons vers vous très vite.`
+            : locale.code === "ar"
+            ? `تم إرسال طلبك لوظيفة “${applyJob.title}” في ${applyJob.location}. سنعاود التواصل معك قريبًا.`
+            : `Application submitted for “${applyJob.title}” in ${applyJob.location}. We’ll get back to you soon.`
+        );
+      } else {
+        setApplyDone({ ok: false, id: null });
+      }
     } catch {
-      setMessages((m) => [...m, { role: "assistant", content: "Could not fetch slots." }]);
+      setApplyDone({ ok: false, id: null });
     } finally {
-      setLoading(false);
+      setApplySubmitting(false);
     }
   }
 
-  // Render helpers
-  function Bubble({ role, children }) {
+  // ---------- UI ----------
+
+  function JobCard({ job }) {
     return (
-      <div style={{ textAlign: role === "user" ? "right" : "left", margin: "6px 0" }}>
+      <div
+        className="card"
+        style={{
+          margin: "6px 0",
+          padding: 12,
+          borderRadius: 12,
+          border: "1px solid var(--line)",
+          background: "#fff",
+        }}
+      >
+        <div style={{ fontWeight: 600 }}>{job.title}</div>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>{job.location}</div>
+        {job.description ? (
+          <div style={{ fontSize: 13, marginTop: 6, color: "#334" }}>
+            {String(job.description).slice(0, 180)}
+            {String(job.description).length > 180 ? "…" : ""}
+          </div>
+        ) : null}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button
+            onClick={() => openApply(job)}
+            className="btn"
+            style={{
+              border: "none",
+              borderRadius: 10,
+              padding: "8px 12px",
+              background:
+                "linear-gradient(90deg, var(--brand-1), var(--brand-2))",
+              color: "#fff",
+            }}
+          >
+            {locale.code === "fr" ? "Postuler" : locale.code === "ar" ? "قدّم" : "Apply"}
+          </button>
+          <a
+            className="btn"
+            href="#jobs"
+            style={{
+              border: "1px solid var(--line)",
+              borderRadius: 10,
+              padding: "8px 12px",
+              background: "#fff",
+            }}
+          >
+            {locale.code === "fr" ? "Voir la fiche" : locale.code === "ar" ? "التفاصيل" : "View"}
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  function Message({ m }) {
+    if (m.type === "jobs") {
+      return (
+        <div style={{ margin: "6px 0" }}>
+          {m.items.map((job, i) => (
+            <JobCard key={`${job.id ?? i}-${job.title}`} job={job} />
+          ))}
+        </div>
+      );
+    }
+    // text bubble
+    return (
+      <div
+        style={{
+          textAlign: m.role === "user" ? "right" : "left",
+          margin: "6px 0",
+        }}
+      >
         <span
           style={{
             display: "inline-block",
             maxWidth: "85%",
             padding: "9px 12px",
             borderRadius: 14,
-            background: role === "user" ? "transparent" : "rgba(15,23,42,.05)",
-            border: role === "user" ? "1px solid var(--line)" : "none",
+            background: m.role === "user" ? "transparent" : "rgba(15,23,42,.05)",
+            border: m.role === "user" ? "1px solid var(--line)" : "none",
             fontSize: 14,
           }}
         >
-          {children}
+          {m.content}
         </span>
       </div>
     );
   }
 
-  function JobsList({ jobs }) {
-    return (
-      <div style={{ display: "grid", gap: 8 }}>
-        {jobs.map((j) => (
-          <div
-            key={j.id}
-            style={{
-              border: "1px solid var(--line)",
-              borderRadius: 12,
-              padding: "10px 12px",
-              background: "#fff",
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{j.title}</div>
-            <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>{j.location}</div>
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <a
-                href="#open-positions"
-                style={{
-                  border: "1px solid var(--line)",
-                  borderRadius: 10,
-                  padding: "6px 10px",
-                  fontSize: 12,
-                  textDecoration: "none",
-                  color: "#0f172a",
-                  background: "#fff",
-                }}
-              >
-                {T.details[locale.code]}
-              </a>
-              <button
-                onClick={() => startApply(j)}
-                style={{
-                  border: "none",
-                  borderRadius: 10,
-                  padding: "6px 10px",
-                  fontSize: 12,
-                  color: "#fff",
-                  background: "linear-gradient(90deg, var(--brand-1), var(--brand-2))",
-                }}
-              >
-                {T.apply[locale.code]}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  function ApplyForm() {
-    return (
-      <form
-        onSubmit={submitApply}
-        style={{
-          marginTop: 8,
-          border: "1px solid var(--line)",
-          borderRadius: 12,
-          padding: 12,
-          background: "#fff",
-        }}
-      >
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>
-          {T.applyFormTitle[locale.code]} — {applyJob?.title}
-        </div>
-        <div style={{ display: "grid", gap: 8 }}>
-          <input
-            placeholder={T.name[locale.code]}
-            value={applyForm.name}
-            onChange={(e) => setApplyForm((f) => ({ ...f, name: e.target.value }))}
-            required
-            style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 14 }}
-          />
-          <input
-            type="email"
-            placeholder={T.email[locale.code]}
-            value={applyForm.email}
-            onChange={(e) => setApplyForm((f) => ({ ...f, email: e.target.value }))}
-            required
-            style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 14 }}
-          />
-          <input
-            placeholder={T.skills[locale.code]}
-            value={applyForm.skills}
-            onChange={(e) => setApplyForm((f) => ({ ...f, skills: e.target.value }))}
-            required
-            style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 14 }}
-          />
-          <input
-            type="number"
-            min="0"
-            placeholder={T.years[locale.code]}
-            value={applyForm.years}
-            onChange={(e) => setApplyForm((f) => ({ ...f, years: e.target.value }))}
-            required
-            style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 14 }}
-          />
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <button
-            type="submit"
-            style={{
-              border: "none",
-              borderRadius: 10,
-              padding: "8px 12px",
-              fontSize: 14,
-              color: "#fff",
-              background: "linear-gradient(90deg, var(--brand-1), var(--brand-2))",
-            }}
-          >
-            {T.submit[locale.code]}
-          </button>
-          <button
-            type="button"
-            onClick={() => setApplyJob(null)}
-            style={{
-              border: "1px solid var(--line)",
-              borderRadius: 10,
-              padding: "8px 12px",
-              fontSize: 14,
-              background: "#fff",
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      </form>
-    );
-  }
-
   return (
-    <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 50 }} dir={locale.dir}>
+    <div
+      style={{ position: "fixed", bottom: 24, right: 24, zIndex: 50 }}
+      dir={locale.dir}
+    >
       {open && (
         <div
           style={{
             marginBottom: 12,
             width: 380,
+            maxWidth: "92vw",
             border: "1px solid var(--line)",
             borderRadius: 18,
             boxShadow: "var(--shadow)",
@@ -396,12 +347,15 @@ export default function ChatWidget() {
               color: "#fff",
             }}
           >
-            <b>{T.title[locale.code]}</b>
+            <b>HR Assistant</b>
             <div style={{ display: "flex", gap: 8 }}>
               <select
                 aria-label="Language"
                 value={locale.code}
-                onChange={(e) => setLocale(LOCALES.find((l) => l.code === e.target.value) ?? LOCALES[0])}
+                onChange={(e) =>
+                  setLocale(LOCALES.find((l) => l.code === e.target.value) ??
+                    LOCALES[0])
+                }
                 style={{ borderRadius: 8, padding: "2px 6px", border: "none" }}
               >
                 {LOCALES.map((l) => (
@@ -413,62 +367,59 @@ export default function ChatWidget() {
               <button
                 onClick={() => setOpen(false)}
                 aria-label="Close"
-                style={{ borderRadius: 8, border: "none", padding: "2px 8px", background: "#ffffff22", color: "#fff" }}
+                style={{
+                  borderRadius: 8,
+                  border: "none",
+                  padding: "2px 8px",
+                  background: "#ffffff22",
+                  color: "#fff",
+                }}
               >
                 ✕
               </button>
             </div>
           </div>
 
-          {/* Messages + jobs + apply form */}
+          {/* Messages */}
           <div
             ref={scrollRef}
             style={{
               height: 360,
               overflowY: "auto",
               padding: 12,
-              background: "linear-gradient(180deg, rgba(108,92,231,.05), rgba(0,184,148,.05))",
+              background:
+                "linear-gradient(180deg, rgba(108,92,231,.05), rgba(0,184,148,.05))",
             }}
           >
-            {messages.map((m, i) =>
-              m.type === "jobs" ? (
-                <div key={`jobs-${i}`} style={{ margin: "6px 0" }}>
-                  <JobsList jobs={m.jobs} />
-                </div>
-              ) : (
-                <Bubble key={i} role={m.role}>
-                  {m.content}
-                </Bubble>
-              )
-            )}
-
-            {applyJob && <ApplyForm />}
-
-            {slots.length > 0 && (
-              <div style={{ marginTop: 10 }}>
-                <button
-                  onClick={fetchSlots}
-                  style={{
-                    border: "1px solid var(--line)",
-                    borderRadius: 10,
-                    padding: "8px 12px",
-                    background: "#fff",
-                    fontSize: 14,
-                  }}
-                >
-                  {T.getSlots[locale.code]}
-                </button>
-              </div>
+            {messages.map((m, i) => (
+              <Message key={i} m={m} />
+            ))}
+            {loading && (
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>…</div>
             )}
           </div>
 
           {/* Input */}
-          <div style={{ display: "flex", gap: 8, padding: 10, borderTop: "1px solid var(--line)", background: "#fff" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              padding: 10,
+              borderTop: "1px solid var(--line)",
+              background: "#fff",
+            }}
+          >
             <input
               ref={inputRef}
               placeholder={placeholder}
               onKeyDown={(e) => e.key === "Enter" && send()}
-              style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", fontSize: 14 }}
+              style={{
+                flex: 1,
+                border: "1px solid var(--line)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                fontSize: 14,
+              }}
             />
             <button
               onClick={send}
@@ -476,20 +427,228 @@ export default function ChatWidget() {
                 borderRadius: 12,
                 padding: "10px 14px",
                 border: "none",
-                background: "linear-gradient(90deg, var(--brand-1), var(--brand-2))",
+                background:
+                  "linear-gradient(90deg, var(--brand-1), var(--brand-2))",
                 color: "#fff",
               }}
             >
-              Send
+              {locale.code === "fr" ? "Envoyer" : locale.code === "ar" ? "إرسال" : "Send"}
             </button>
           </div>
+
+          {/* Quick Apply Drawer (inline) */}
+          {applyOpen && (
+            <div
+              className="card"
+              style={{
+                borderTop: "1px solid var(--line)",
+                padding: 12,
+                background: "#fff",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <b>
+                  {locale.code === "fr"
+                    ? "Candidature rapide"
+                    : locale.code === "ar"
+                    ? "تقديم سريع"
+                    : "Quick Apply"}
+                  {applyJob ? ` — ${applyJob.title} (${applyJob.location})` : ""}
+                </b>
+                <button
+                  onClick={() => setApplyOpen(false)}
+                  className="btn"
+                  style={{
+                    border: "1px solid var(--line)",
+                    borderRadius: 10,
+                    padding: "4px 8px",
+                    background: "#fff",
+                  }}
+                >
+                  {locale.code === "fr" ? "Fermer" : locale.code === "ar" ? "إغلاق" : "Close"}
+                </button>
+              </div>
+
+              {applyDone?.ok ? (
+                <div
+                  className="card"
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    borderRadius: 10,
+                    background: "rgba(0,184,148,.1)",
+                    border: "1px solid rgba(0,184,148,.3)",
+                  }}
+                >
+                  ✅{" "}
+                  {locale.code === "fr"
+                    ? "Candidature envoyée. Merci !"
+                    : locale.code === "ar"
+                    ? "تم إرسال الطلب. شكرًا لك!"
+                    : "Application submitted. Thank you!"}
+                </div>
+              ) : (
+                <form onSubmit={submitApplication} style={{ marginTop: 10 }}>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <input
+                      required
+                      placeholder={
+                        locale.code === "fr"
+                          ? "Nom complet"
+                          : locale.code === "ar"
+                          ? "الاسم الكامل"
+                          : "Full name"
+                      }
+                      value={applyData.name}
+                      onChange={(e) =>
+                        setApplyData((d) => ({ ...d, name: e.target.value }))
+                      }
+                      style={{
+                        border: "1px solid var(--line)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                      }}
+                    />
+                    <input
+                      required
+                      type="email"
+                      placeholder={
+                        locale.code === "fr"
+                          ? "Email"
+                          : locale.code === "ar"
+                          ? "البريد الإلكتروني"
+                          : "Email"
+                      }
+                      value={applyData.email}
+                      onChange={(e) =>
+                        setApplyData((d) => ({ ...d, email: e.target.value }))
+                      }
+                      style={{
+                        border: "1px solid var(--line)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                      }}
+                    />
+                    <input
+                      required
+                      placeholder={
+                        locale.code === "fr"
+                          ? "Lien vers le CV (Google Drive, etc.)"
+                          : locale.code === "ar"
+                          ? "رابط السيرة الذاتية"
+                          : "Resume link (Google Drive, etc.)"
+                      }
+                      value={applyData.resumeUrl}
+                      onChange={(e) =>
+                        setApplyData((d) => ({ ...d, resumeUrl: e.target.value }))
+                      }
+                      style={{
+                        border: "1px solid var(--line)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                      }}
+                    />
+                    <textarea
+                      placeholder={
+                        locale.code === "fr"
+                          ? "Note (optionnelle)"
+                          : locale.code === "ar"
+                          ? "ملاحظة (اختياري)"
+                          : "Note (optional)"
+                      }
+                      value={applyData.note}
+                      onChange={(e) =>
+                        setApplyData((d) => ({ ...d, note: e.target.value }))
+                      }
+                      rows={3}
+                      style={{
+                        border: "1px solid var(--line)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        resize: "vertical",
+                      }}
+                    />
+                  </div>
+
+                  {!applyDone?.ok && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <button
+                        type="submit"
+                        disabled={applySubmitting}
+                        className="btn"
+                        style={{
+                          border: "none",
+                          borderRadius: 10,
+                          padding: "10px 14px",
+                          background:
+                            "linear-gradient(90deg, var(--brand-1), var(--brand-2))",
+                          color: "#fff",
+                        }}
+                      >
+                        {applySubmitting
+                          ? locale.code === "fr"
+                            ? "Envoi…"
+                            : locale.code === "ar"
+                            ? "جارٍ الإرسال…"
+                            : "Sending…"
+                          : locale.code === "fr"
+                          ? "Envoyer"
+                          : locale.code === "ar"
+                          ? "إرسال"
+                          : "Submit"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setApplyOpen(false)}
+                        className="btn"
+                        style={{
+                          border: "1px solid var(--line)",
+                          borderRadius: 10,
+                          padding: "10px 14px",
+                          background: "#fff",
+                        }}
+                      >
+                        {locale.code === "fr" ? "Annuler" : locale.code === "ar" ? "إلغاء" : "Cancel"}
+                      </button>
+                    </div>
+                  )}
+
+                  {applyDone?.ok === false && (
+                    <div
+                      className="card"
+                      style={{
+                        marginTop: 10,
+                        padding: 10,
+                        borderRadius: 10,
+                        background: "rgba(239,68,68,.08)",
+                        border: "1px solid rgba(239,68,68,.2)",
+                        color: "#a11",
+                      }}
+                    >
+                      {locale.code === "fr"
+                        ? "Échec de l’envoi. Réessayez."
+                        : locale.code === "ar"
+                        ? "فشل الإرسال. حاول مرة أخرى."
+                        : "Couldn’t submit. Please try again."}
+                    </div>
+                  )}
+                </form>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          style={{ border: "1px solid var(--line)", borderRadius: 999, padding: "12px 18px", background: "#fff", boxShadow: "var(--shadow)" }}
+          style={{
+            border: "1px solid var(--line)",
+            borderRadius: 999,
+            padding: "12px 18px",
+            background: "#fff",
+            boxShadow: "var(--shadow)",
+          }}
         >
           Chat
         </button>
