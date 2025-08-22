@@ -18,7 +18,6 @@ export default function Page() {
         <div className="gradient-text" style={{ fontWeight: 700 }}>
           AI HR Agent
         </div>
-
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <a className="btn" href="#jobs">Open Positions</a>
           <a className="btn" href="/?location=Paris#jobs">Paris</a>
@@ -28,7 +27,8 @@ export default function Page() {
           <a className="btn" href="#about">About</a>
           <a className="btn" href="#process">Process</a>
           <a className="btn" href="#contact">Contact</a>
-          {/* Link only (no onClick in a Server Component) */}
+
+          {/* IMPORTANT: link only. No onClick here. */}
           <a
             className="btn"
             href="#chat"
@@ -49,12 +49,10 @@ export default function Page() {
         </p>
       </section>
 
-      {/* Jobs (adds the missing #jobs anchor) */}
-      <section id="jobs" aria-label="Open positions">
-        <JobSearch />
-      </section>
+      {/* Jobs */}
+      <JobSearch />
 
-      {/* About / Process / Contact */}
+      {/* Info sections */}
       <section id="about" className="card" style={{ marginTop: 24 }}>
         <h2 style={{ marginTop: 0 }}>About Us</h2>
         <p style={{ color: "var(--muted)" }}>
@@ -75,14 +73,12 @@ export default function Page() {
 
       <section id="contact" className="card" style={{ marginTop: 16 }}>
         <h2 style={{ marginTop: 0 }}>Contact</h2>
-        {/* Link only, no onClick */}
         <p style={{ color: "var(--muted)" }}>
-          Questions? Click <a href="#chat">Chat with us</a> or email
-          {" "}careers@example.com.
+          Questions? Click <a href="#chat">Chat with us</a> or email careers@example.com.
         </p>
       </section>
 
-      {/* Anchor for the widget + the widget itself */}
+      {/* Anchor for the widget */}
       <div id="chat" />
       <ChatWidget />
     </main>
